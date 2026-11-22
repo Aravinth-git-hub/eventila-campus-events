@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Eventila - The Heartbeat of Your Campus</title>
+    <meta name="description" content="Eventila is an all-in-one platform for discovering, creating, and managing unforgettable college events with ease. It simplifies ticketing, promotion, and analytics for campus life." />
+    <meta property="og:title" content="Eventila - The Heartbeat of Your Campus" />
+    <meta property="og:description" content="Eventila is an all-in-one platform for discovering, creating, and managing unforgettable college events with ease. It simplifies ticketing, promotion, and analytics for campus life." />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Poppins:wght@600;700;800&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              // New Palette based on prompt
+              'navy': '#0a1a2f',
+              'orange': '#DA6308',
+              'teal': '#1abc9c',
+              
+              // Semantic Colors for Theming
+              'primary': {
+                DEFAULT: '#FFFFFF', // light mode main bg
+                dark: '#0a1a2f'      // dark mode main bg
+              },
+              'surface': {
+                DEFAULT: '#F1F5F9', // light mode card/modal bg
+                dark: '#192a41'     // dark mode card/modal bg
+              },
+              'accent': {
+                DEFAULT: '#DA6308',
+                dark: '#DA6308'
+              },
+              'secondary': {
+                DEFAULT: '#1abc9c',
+                dark: '#1abc9c'
+              },
+              'text-primary': {
+                DEFAULT: '#0a1a2f', // light mode main text
+                dark: '#F8FAFC'     // dark mode main text
+              },
+              'text-secondary': {
+                DEFAULT: '#64748B', // light mode secondary text
+                dark: '#94A3B8'     // dark mode secondary text
+              },
+              'border-color': {
+                DEFAULT: '#E2E8F0',
+                dark: '#334155'
+              },
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              display: ['Poppins', 'sans-serif'],
+            }
+          }
+        }
+      }
+    </script>
+<style>
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  ::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Hide scrollbar for IE, Edge and Firefox */
+  body {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+
+  /* Fix input text and placeholder visibility */
+  input, textarea, select {
+    color: inherit;
+    font-family: inherit;
+  }
+
+  ::placeholder {
+    color: #64748B !important; /* text-secondary light */
+    opacity: 0.8 !important;
+  }
+  
+  .dark ::placeholder {
+    color: #94A3B8 !important; /* text-secondary dark */
+    opacity: 0.7 !important;
+  }
+
+  /* Ensure inputs have correct text color in dark mode */
+  .dark input, .dark textarea, .dark select {
+    color: #F8FAFC !important;
+  }
+</style>
+<link rel="stylesheet" href="./index.css">
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./index.tsx"></script>
+</body>
+</html>

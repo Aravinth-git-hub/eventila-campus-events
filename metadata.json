@@ -1,0 +1,6 @@
+{
+  "name": "Eventila",
+  "description": "Eventila is an all-in-one platform for discovering, creating, and managing unforgettable college events with ease. It simplifies ticketing, promotion, and analytics for campus life.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
