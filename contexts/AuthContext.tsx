@@ -37,6 +37,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setError(null);
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     try {
+      // Let ConfirmEmailPage handle email confirmation sessions without auto-logging into dashboard
+      if (
+        typeof window !== 'undefined' &&
+        (window.location.pathname === '/auth/confirm' ||
+          window.location.pathname === '/auth/callback')
+      ) {
+        setUser(null);
+        setUsers([]);
+        return;
+      }
+
       const sessionResult = await Promise.race([
         supabase.auth.getSession(),
         new Promise<{ data: { session: null }; error: Error }>((resolve) => {
@@ -55,6 +66,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           setUser(null);
           setUsers([]);
         }
+        return;
+      }
+
+      // Only allow email-confirmed users into authenticated dashboard state
+      if (!session.user.email_confirmed_at && !session.user.confirmed_at) {
+        setUser(null);
+        setUsers([]);
         return;
       }
 
@@ -103,8 +121,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isMounted) return;
 
-      // Ignore transient session events emitted during signup before immediate signOut or active login
-      if (isSigningUpRef.current || isLoggingInRef.current) {
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setUsers([]);
+        setIsLoading(false);
+        return;
+      }
+
+      // Ignore transient session events during signup, active login, or email confirmation
+      if (
+        isSigningUpRef.current ||
+        isLoggingInRef.current ||
+        (typeof window !== 'undefined' &&
+          (window.location.pathname === '/auth/confirm' ||
+            window.location.pathname === '/auth/callback'))
+      ) {
         return;
       }
 
@@ -112,10 +143,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return;
       }
 
-      if (event === 'SIGNED_OUT' || !session?.user) {
+      if (!session?.user) {
         setUser(null);
         setUsers([]);
         setIsLoading(false);
+        return;
+      }
+
+      if (!session.user.email_confirmed_at && !session.user.confirmed_at) {
+        setUser(null);
+        setUsers([]);
         return;
       }
 

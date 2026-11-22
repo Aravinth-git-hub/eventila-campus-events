@@ -1,7 +1,7 @@
 // api/index.ts
 // Supabase-only authentication (no email verification required) and authorized data operations.
 
-import { supabase, isSupabaseConfigured, supabaseUrl, supabaseAnonKey } from "../src/lib/supabase";
+import { supabase, isSupabaseConfigured } from "../src/lib/supabase";
 import {
   isValidEmail,
   isValidPhone,
@@ -154,36 +154,11 @@ export const apiLogin = async (email: string, password: string): Promise<User> =
     }
 
     if (code === "email_not_confirmed" || msg.includes("email not confirmed")) {
-      let autoConfirmEnabled: boolean | null = null;
-      try {
-        const settingsRes = await fetch(`${supabaseUrl}/auth/v1/settings`, {
-          headers: { apikey: supabaseAnonKey },
-        });
-        if (settingsRes.ok) {
-          const settings = await settingsRes.json();
-          if (typeof settings?.mailer_autoconfirm === "boolean") {
-            autoConfirmEnabled = settings.mailer_autoconfirm;
-          }
-        }
-      } catch {
-        // Ignore diagnostic lookup failures
-      }
-
-      if (autoConfirmEnabled === true) {
-        throw new Error(
-          "This account's email is marked unconfirmed in Supabase Auth because it was registered before 'Confirm email' was disabled. Confirm this user in Supabase Dashboard → Authentication → Users (or run the confirmation SQL in supabase_schema.sql), or sign up with a new email."
-        );
-      }
-
-      if (autoConfirmEnabled === false) {
-        throw new Error(
-          "Email confirmation is still enabled in Supabase Dashboard. Please disable 'Confirm email' under Authentication → Providers → Email."
-        );
-      }
-
-      throw new Error(
-        "Supabase Auth rejected login because this account's email is unconfirmed. Please confirm the user under Authentication → Users or ensure 'Confirm email' is disabled."
+      const unverifiedErr = new Error(
+        "Your email address is not verified yet. Please check your inbox and click the verification link before logging in."
       );
+      (unverifiedErr as any).code = "EMAIL_NOT_CONFIRMED";
+      throw unverifiedErr;
     }
 
     if (error.status === 429 || code === "over_request_rate_limit") {
@@ -195,6 +170,16 @@ export const apiLogin = async (email: string, password: string): Promise<User> =
 
   if (!data?.user || !data?.session) {
     throw new Error("Incorrect email or password.");
+  }
+
+  // Enforce email verification even if session was returned
+  if (!data.user.email_confirmed_at && !data.user.confirmed_at) {
+    await supabase.auth.signOut().catch(() => {});
+    const unverifiedErr = new Error(
+      "Your email address is not verified yet. Please check your inbox and click the verification link before logging in."
+    );
+    (unverifiedErr as any).code = "EMAIL_NOT_CONFIRMED";
+    throw unverifiedErr;
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -253,10 +238,16 @@ export const apiSignup = async (
   let data: any;
   let error: any;
   try {
+    const emailRedirectTo =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/auth/confirm`
+        : undefined;
+
     const res = await supabase.auth.signUp({
       email: cleanEmail,
       password,
       options: {
+        emailRedirectTo,
         data: {
           name: cleanName,
           role: userToSignup.role,
@@ -291,6 +282,19 @@ export const apiSignup = async (
     if (msg.includes("signups not allowed") || error.code === "signup_disabled") {
       throw new Error("Email signups are currently disabled in Supabase Auth settings.");
     }
+    if (
+      msg.includes("sending confirmation email") ||
+      msg.includes("error sending") ||
+      msg.includes("smtp") ||
+      error.code === "unexpected_failure"
+    ) {
+      throw new Error(
+        "Unable to send the verification email right now. Please check your email address or try again shortly."
+      );
+    }
+    if (error.status === 429 || error.code === "over_email_send_rate_limit") {
+      throw new Error("Too many signup attempts. Please wait a moment before trying again.");
+    }
     if (msg.includes("database error saving new user")) {
       throw new Error(
         "Database error while creating your profile. Please ensure the latest supabase_schema.sql migration has been applied."
@@ -311,9 +315,8 @@ export const apiSignup = async (
     throw new Error("Account creation did not return a valid user record.");
   }
 
-  // If Supabase returned an active session (email confirmation disabled),
-  // verify profile was created by trigger and insert it if missing, then sign out
-  // so the user must manually log in before entering their dashboard.
+  // If Supabase returned an active session, ensure profile exists without duplicates
+  // and immediately sign out so the user is never logged in before email verification.
   if (data.session) {
     const { data: existingProfile, error: existingProfileError } = await supabase
       .from("profiles")
@@ -343,12 +346,164 @@ export const apiSignup = async (
         avatar_url: userToSignup.avatarUrl || null,
       });
 
-      if (insertError) {
+      if (insertError && insertError.code !== "23505") {
         await supabase.auth.signOut().catch(() => {});
         throw new Error(`Account created, but profile setup failed: ${insertError.message}`);
       }
     }
 
+    await supabase.auth.signOut().catch(() => {});
+  }
+};
+
+export const apiResendVerificationEmail = async (email: string): Promise<void> => {
+  assertSupabaseConfigured();
+
+  const cleanEmail = email.trim().toLowerCase();
+  if (!cleanEmail || !isValidEmail(cleanEmail)) {
+    throw new Error("Please enter a valid email address.");
+  }
+
+  try {
+    const emailRedirectTo =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/auth/confirm`
+        : undefined;
+
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: cleanEmail,
+      options: {
+        emailRedirectTo,
+      },
+    });
+
+    if (error) {
+      if (isNetworkFailure(error)) {
+        throw new Error(NETWORK_UNREACHABLE_MSG);
+      }
+      const msg = (error.message || "").toLowerCase();
+      if (error.status === 429 || error.code === "over_email_send_rate_limit") {
+        throw new Error(
+          "Too many confirmation emails requested. Please wait a minute before trying again."
+        );
+      }
+      if (
+        msg.includes("sending") ||
+        msg.includes("smtp") ||
+        error.code === "unexpected_failure"
+      ) {
+        throw new Error(
+          "Unable to send confirmation email right now. Please try again later."
+        );
+      }
+      throw new Error(error.message || "Failed to resend confirmation email.");
+    }
+  } catch (err: any) {
+    if (isNetworkFailure(err)) {
+      throw new Error(NETWORK_UNREACHABLE_MSG);
+    }
+    throw err;
+  }
+};
+
+export type SupportedEmailOtpType =
+  | "email"
+  | "signup"
+  | "magiclink"
+  | "email_change";
+
+export const apiVerifyEmailToken = async (
+  tokenHash: string,
+  type: SupportedEmailOtpType
+): Promise<void> => {
+  assertSupabaseConfigured();
+
+  const cleanTokenHash = tokenHash.trim();
+  if (!cleanTokenHash) {
+    throw new Error(
+      "Missing confirmation token. Please use the link from your email or request a new confirmation email."
+    );
+  }
+
+  let data: any;
+  let error: any;
+  try {
+    const res = await supabase.auth.verifyOtp({
+      token_hash: cleanTokenHash,
+      type,
+    });
+    data = res.data;
+    error = res.error;
+  } catch (err) {
+    if (isNetworkFailure(err)) {
+      throw new Error(NETWORK_UNREACHABLE_MSG);
+    }
+    throw new Error("Verification failed due to an unexpected network error.");
+  }
+
+  if (error) {
+    if (isNetworkFailure(error)) {
+      throw new Error(NETWORK_UNREACHABLE_MSG);
+    }
+    const msg = (error.message || "").toLowerCase();
+    if (msg.includes("expired") || error.code === "otp_expired") {
+      throw new Error(
+        "Your confirmation link has expired. Please request a new confirmation email below."
+      );
+    }
+    if (msg.includes("already") || msg.includes("used")) {
+      throw new Error(
+        "This confirmation link has already been used or is invalid. Please try logging in or request a new confirmation email."
+      );
+    }
+    throw new Error(
+      "This confirmation link is invalid or has already been used. Please request a new confirmation email below."
+    );
+  }
+
+  const verifiedUser = data?.user || data?.session?.user || null;
+  if (!verifiedUser) {
+    throw new Error("Unable to verify your account. Please request a new confirmation email.");
+  }
+
+  // Ensure profile exists without creating duplicates
+  if (data?.session) {
+    const { data: existingProfile } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("id", verifiedUser.id)
+      .maybeSingle();
+
+    if (!existingProfile) {
+      const meta = verifiedUser.user_metadata || {};
+      const role = ["student", "faculty", "hod"].includes(meta.role)
+        ? meta.role
+        : "student";
+      const cleanName =
+        (typeof meta.name === "string" && meta.name.trim()) ||
+        (verifiedUser.email ? verifiedUser.email.split("@")[0] : "Eventila User");
+
+      const { error: insertError } = await supabase.from("profiles").insert({
+        id: verifiedUser.id,
+        name: cleanName,
+        email: (verifiedUser.email || "").toLowerCase(),
+        role,
+        college: meta.college || "Annapoorana Engineering College, Salem",
+        department: meta.department || null,
+        year: meta.year || null,
+        avatar_url: meta.avatar_url || null,
+      });
+
+      if (insertError && insertError.code !== "23505") {
+        await supabase.auth.signOut().catch(() => {});
+        throw new Error(
+          `Email verified, but profile setup failed: ${insertError.message}`
+        );
+      }
+    }
+
+    // Always sign out after verification so user manually signs in on the Login page
     await supabase.auth.signOut().catch(() => {});
   }
 };

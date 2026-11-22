@@ -9,6 +9,7 @@ import LoginPage from './pages/auth/LoginPage';
 import SignupPage from './pages/auth/SignupPage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 import ResetPasswordPage from './pages/auth/ResetPasswordPage';
+import ConfirmEmailPage from './pages/auth/ConfirmEmailPage';
 
 // Dashboard layout and pages
 import DashboardLayout from './components/layout/DashboardLayout';
@@ -55,6 +56,8 @@ const AppRoutes: React.FC = () => {
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route path="/auth/confirm" element={<ConfirmEmailPage />} />
+      <Route path="/auth/callback" element={<ConfirmEmailPage />} />
 
       {/* Protected Dashboard Routes */}
       <Route

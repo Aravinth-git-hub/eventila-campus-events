@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { Logo, UserIcon, AcademicCapIcon, BuildingOfficeIcon } from '../../components/icons/IconCollection';
 import { useAuth } from '../../contexts/AuthContext';
-import { apiFetchColleges } from '../../api';
+import { apiFetchColleges, apiResendVerificationEmail } from '../../api';
 import { isValidEmail, isValidPhone, validatePasswordStrength } from '../../src/utils/validation';
 import type { User, UserRole, College } from '../../types';
 
@@ -52,6 +52,9 @@ const SignupPage: React.FC = () => {
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [registeredEmail, setRegisteredEmail] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+  const [resendFeedback, setResendFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     apiFetchColleges().then((data) => {
@@ -175,17 +178,32 @@ const SignupPage: React.FC = () => {
     try {
       await signup(newUser, password);
       form.reset();
-      navigate('/login', {
-        replace: true,
-        state: {
-          signupSuccess:
-            'Registration successful! Please sign in using your registered email and password.',
-        },
-      });
+      setResendFeedback(null);
+      setRegisteredEmail(newUser.email);
     } catch (err: any) {
       setError(err.message || 'Failed to create account.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!registeredEmail) return;
+    setResending(true);
+    setResendFeedback(null);
+    try {
+      await apiResendVerificationEmail(registeredEmail);
+      setResendFeedback({
+        type: 'success',
+        text: `A new verification link has been sent to ${registeredEmail}.`,
+      });
+    } catch (err: any) {
+      setResendFeedback({
+        type: 'error',
+        text: err.message || 'Failed to resend verification email.',
+      });
+    } finally {
+      setResending(false);
     }
   };
 
@@ -445,15 +463,59 @@ const SignupPage: React.FC = () => {
           </Link>
         </div>
         <div className="bg-surface dark:bg-surface-dark p-8 rounded-lg shadow-lg">
-          <StepIndicator currentStep={step} totalSteps={3} />
-          <div className="animate-fadeIn">{renderStep()}</div>
+          {registeredEmail ? (
+            <div className="text-center space-y-4 animate-fadeIn">
+              <div className="w-12 h-12 rounded-full bg-teal-500/10 text-teal-600 dark:text-teal-400 flex items-center justify-center mx-auto text-xl font-bold">
+                ✓
+              </div>
+              <h2 className="text-2xl font-display font-bold text-text-primary dark:text-text-primary-dark">
+                Verify Your Email
+              </h2>
+              <div className="p-3 rounded-md bg-teal-500/10 border border-teal-500/20 text-xs text-teal-600 dark:text-teal-400">
+                We've sent a confirmation link to your email address. Please verify your email to activate your Eventila account.
+              </div>
+              <p className="text-xs text-text-secondary dark:text-text-secondary-dark">
+                Sent to <span className="font-semibold text-text-primary dark:text-text-primary-dark">{registeredEmail}</span>
+              </p>
+
+              {resendFeedback && (
+                <div
+                  className={`p-2.5 rounded-md border text-xs ${
+                    resendFeedback.type === 'success'
+                      ? 'bg-teal-500/10 border-teal-500/20 text-teal-600 dark:text-teal-400'
+                      : 'bg-red-500/10 border-red-500/20 text-red-500'
+                  }`}
+                >
+                  {resendFeedback.text}
+                </div>
+              )}
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={handleResendVerification}
+                  disabled={resending}
+                  className="w-full bg-accent hover:bg-orange-600 text-white font-semibold py-2.5 rounded-md text-sm transition-colors duration-200 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  {resending ? 'Sending...' : 'Resend Confirmation Email'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <StepIndicator currentStep={step} totalSteps={3} />
+              <div className="animate-fadeIn">{renderStep()}</div>
+            </>
+          )}
         </div>
-        <div className="mt-6 text-center text-sm text-text-secondary dark:text-text-secondary-dark">
-          Already have an account?{' '}
-          <Link to="/login" className="font-medium text-accent hover:underline">
-            Log in
-          </Link>
-        </div>
+        {!registeredEmail && (
+          <div className="mt-6 text-center text-sm text-text-secondary dark:text-text-secondary-dark">
+            Already have an account?{' '}
+            <Link to="/login" className="font-medium text-accent hover:underline">
+              Log in
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   );

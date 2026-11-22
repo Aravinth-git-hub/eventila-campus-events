@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Logo } from '../../components/icons/IconCollection';
 import { useAuth } from '../../contexts/AuthContext';
+import { apiResendVerificationEmail } from '../../api';
 import { isValidEmail } from '../../src/utils/validation';
 import type { UserRole } from '../../types';
 
@@ -26,8 +27,12 @@ const LoginPage: React.FC = () => {
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resendFeedback, setResendFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const signupSuccess = (location.state as { signupSuccess?: string } | null)?.signupSuccess;
+  const navState = location.state as { signupSuccess?: string; verificationSuccess?: string } | null;
+  const statusBanner = navState?.verificationSuccess || navState?.signupSuccess;
 
   if (!isLoading && isAuthenticated && user) {
     return <Navigate to={getDashboardRouteForRole(user.role)} replace />;
@@ -36,6 +41,8 @@ const LoginPage: React.FC = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setNeedsVerification(false);
+    setResendFeedback(null);
 
     const trimmedEmail = email.trim();
     if (!trimmedEmail || !password) {
@@ -52,9 +59,40 @@ const LoginPage: React.FC = () => {
       const loggedInUser = await login(trimmedEmail, password);
       navigate(getDashboardRouteForRole(loggedInUser.role), { replace: true });
     } catch (err: any) {
-      setError(err.message || 'Incorrect email or password.');
+      const msg = err?.message || 'Incorrect email or password.';
+      setError(msg);
+      if (
+        err?.code === 'EMAIL_NOT_CONFIRMED' ||
+        msg.toLowerCase().includes('not verified')
+      ) {
+        setNeedsVerification(true);
+      }
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !isValidEmail(trimmedEmail)) {
+      setResendFeedback({ type: 'error', text: 'Please enter your registered email address above.' });
+      return;
+    }
+    setResending(true);
+    setResendFeedback(null);
+    try {
+      await apiResendVerificationEmail(trimmedEmail);
+      setResendFeedback({
+        type: 'success',
+        text: `Verification link resent to ${trimmedEmail}. Please check your inbox.`,
+      });
+    } catch (err: any) {
+      setResendFeedback({
+        type: 'error',
+        text: err?.message || 'Failed to resend verification email.',
+      });
+    } finally {
+      setResending(false);
     }
   };
 
@@ -72,9 +110,9 @@ const LoginPage: React.FC = () => {
             Log in to continue to your dashboard.
           </p>
 
-          {signupSuccess && (
+          {statusBanner && !error && (
             <div className="mb-4 p-3 rounded-md bg-teal-500/10 border border-teal-500/20 text-xs text-teal-600 dark:text-teal-400 text-center">
-              {signupSuccess}
+              {statusBanner}
             </div>
           )}
 
@@ -115,8 +153,30 @@ const LoginPage: React.FC = () => {
             </div>
 
             {error && (
-              <div className="p-2.5 rounded-md bg-red-500/10 border border-red-500/20 text-xs text-red-500 text-center">
-                {error}
+              <div className="p-2.5 rounded-md bg-red-500/10 border border-red-500/20 text-xs text-red-500 text-center space-y-2">
+                <p>{error}</p>
+                {needsVerification && (
+                  <button
+                    type="button"
+                    onClick={handleResendVerification}
+                    disabled={resending}
+                    className="inline-block text-accent hover:underline font-semibold disabled:opacity-50"
+                  >
+                    {resending ? 'Sending verification email...' : 'Resend Verification Email'}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {resendFeedback && (
+              <div
+                className={`p-2.5 rounded-md border text-xs text-center ${
+                  resendFeedback.type === 'success'
+                    ? 'bg-teal-500/10 border-teal-500/20 text-teal-600 dark:text-teal-400'
+                    : 'bg-red-500/10 border-red-500/20 text-red-500'
+                }`}
+              >
+                {resendFeedback.text}
               </div>
             )}
 
